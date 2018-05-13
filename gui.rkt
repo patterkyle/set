@@ -8,7 +8,22 @@
          racket/gui
          "logic.rkt")
 
-(define deck (make-deck))
+(define phi (/ (+ 1 (sqrt 5)) 2))
+(define frame-w 800)
+(define frame-h (/ frame-w phi))
+
+; game state
+; status is one of ('playing 'over)
+(struct gs (deck
+            visible-cards
+            selected-cards
+            status)
+  #:transparent)
+
+(define game-state (gs (make-deck)
+                       12
+                       '()
+                       'playing))
 
 (define (diamond w h color shading)
   (define-values (pict-color pict-shading)
@@ -133,7 +148,7 @@
                         (symbol-pict shape-w h color shading)
                         (symbol-pict shape-w h color shading))]))
 
-(define (card-pict card w h)
+(define (card-pict w h card)
   (cc-superimpose (filled-rectangle w h #:color "white")
                   (symbol-row w
                               (* h 0.8)
@@ -141,3 +156,55 @@
                               (card-number  card)
                               (card-color   card)
                               (card-shading card))))
+
+(define (game w cards [cols 4] [col-sep 10] [row-sep 10])
+  (define h      (/ w phi))
+  (define card-w (/ w 4.5))
+  (define card-h (/ h 4.5))
+  (cc-superimpose (filled-rectangle w h #:color "blue")
+                  (table cols
+                         (for/list ([c cards])
+                           (card-pict card-w card-h c))
+                         cc-superimpose
+                         cc-superimpose
+                         col-sep
+                         row-sep)))
+
+(define frame (new frame%
+                   [label  "set."]
+                   [width  frame-w]
+                   [height (inexact->exact (floor frame-h))]))
+
+(define (handle-mouse-event event)
+  (case (send event get-event-type)
+    ['left-down (println (cons (send event get-x)
+                               (send event get-y)))]))
+
+(define (handle-key-event event)
+  (case (send event get-key-code)
+    ['up (println "up")]
+    ['down (println "down")]))
+
+(define (paint-callback canvas dc)
+  (send dc set-smoothing 'aligned)
+  (case (gs-status game-state)
+    ['playing (draw-pict (game frame-w
+                               (take (gs-deck game-state)
+                                     (gs-visible-cards game-state)))
+                         dc 0 0)]))
+
+(define game-canvas% (class canvas%
+                       (define/override (on-event event)
+                         (handle-mouse-event event))
+                       (define/override (on-char event)
+                         (handle-key-event event))
+                       (super-new)))
+
+(define canvas (new game-canvas%
+                    [parent         frame]
+                    [paint-callback paint-callback]))
+
+(define (main)
+  (send frame show #t))
+
+(main)
