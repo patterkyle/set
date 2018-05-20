@@ -2,6 +2,7 @@
 
 (require (only-in racket/draw
                   brush%
+                  color%
                   dc-path%
                   pen%)
          pict
@@ -10,11 +11,13 @@
          "prelude.rkt"
          "logic.rkt")
 
-(def ([phi           (/ (+ 1 (sqrt 5)) 2)]
-      [frame-w       800]
-      [frame-h       (/ frame-w phi)]
-      [pen-w         3]
-      [hover-color   "Fuchsia"]
+(def ([𝜙              (/ (+ 1 (sqrt 5)) 2)]
+      [frame-w        800]
+      [frame-h        (/ frame-w 𝜙)]
+      [canvas-w       (* frame-w 0.75)]
+      [pen-w          3]
+      [bg-color       "blue"]
+      [hover-color    "Fuchsia"]
       [selected-color "yellow"]))
 
 ;game state
@@ -22,7 +25,9 @@
             deck
             visible-card-count
             selected-cards
-            hover-idx)
+            hover-idx
+            canvas-w
+            canvas-h)
   #:mutable
   #:transparent)
 
@@ -30,7 +35,9 @@
                     (make-deck)
                     16
                     empty
-                    0))
+                    0
+                    canvas-w
+                    (/ canvas-w 𝜙)))
 
 (def (card-color->pict-color color)
   (case color
@@ -141,7 +148,7 @@
     ['squiggle squiggle]))
 
 (def (symbol-row h number symbol shading color)
-  (def ([w       (* h phi)]
+  (def ([w       (* h 𝜙)]
         [pict-fn (card-symbol->pict-fn symbol)]
         [spacing (/ w 12)]
         [shape-w (/ w 3.5)]))
@@ -158,10 +165,10 @@
 (def (card-pict w card
                 #:selected? [selected? #f]
                 #:hover? [hover? #f])
-  (def ([h     (/ w phi)]
+  (def ([h            (/ w 𝜙)]
         [border-color (if hover? hover-color "black")]
-        [border-w (if hover? 8 1)]
-        [color (if selected? selected-color "white")]))
+        [border-w     (if hover? 4 1)]
+        [color        (if selected? selected-color "white")]))
   (launder
    (cc-superimpose (filled-rectangle w h
                                      #:color        color
@@ -179,9 +186,11 @@
 (def (card-table w cards [cols 4] [sep 10]
                  #:hover-idx      [hover-idx 0]
                  #:selected-cards [selected-cards '()])
-  (def ([h      (/ w phi)]
+  (def ([h      (/ w 𝜙)]
         [card-w (table-w->card-w w)]))
-  (cc-superimpose (filled-rectangle w h #:color "blue")
+  (cc-superimpose (filled-rectangle w h
+                                    #:color        bg-color
+                                    #:draw-border? #f)
                   (table cols
                          (for/list ([i (in-range (length cards))]
                                     [c cards])
@@ -238,18 +247,28 @@
 
 (def (draw-game canvas dc)
   (send dc set-smoothing 'aligned)
-  (draw-pict (card-table frame-w
-                         (take (vector->list (gs-deck game-state))
-                               (gs-visible-card-count game-state))
-                         #:hover-idx (gs-hover-idx game-state)
-                         #:selected-cards (gs-selected-cards game-state))
-             dc 0 0))
+  (send canvas set-canvas-background (make-object color% 0 0 255))
+  (def game-pict (card-table (gs-canvas-w game-state)
+                             (take (vector->list (gs-deck game-state))
+                                   (gs-visible-card-count game-state))
+                             #:hover-idx (gs-hover-idx game-state)
+                             #:selected-cards (gs-selected-cards game-state)))
+  (draw-pict game-pict
+             dc
+             0
+             #;(- (/ (gs-canvas-w game-state) 2)
+                (/ (pict-width game-pict) 2))
+             (- (/ (gs-canvas-h game-state) 2)
+                (/ (pict-height game-pict) 2))))
 
 (def game-canvas% (class canvas%
                     (define/override (on-event event)
                       (handle-mouse-event event))
                     (define/override (on-char event)
                       (handle-key-event this event))
+                    (define/override (on-size w h)
+                      (set-gs-canvas-w! game-state w)
+                      (set-gs-canvas-h! game-state h))
                     (super-new)))
 
 (def canvas (new game-canvas%
