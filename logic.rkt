@@ -1,15 +1,17 @@
 #lang racket
 
-(provide make-deck
-         makes-set?
-         (struct-out card)
-         all-equal?
-         all-distinct?)
+(require "prelude.rkt")
 
-(define card-numbers  #(one two three))
-(define card-symbols  #(diamond squiggle oval))
-(define card-shadings #(solid striped open))
-(define card-colors   #(red green purple))
+(provide (struct-out card)
+          make-deck
+          all-equal?
+          all-distinct?
+          makes-set?)
+
+(def ([card-numbers  #(one two three)]
+      [card-symbols  #(diamond squiggle oval)]
+      [card-shadings #(solid striped open)]
+      [card-colors   #(red green purple)]))
 
 (struct card (number
               symbol
@@ -17,31 +19,34 @@
               color)
   #:transparent)
 
-(define (make-deck)
-  (shuffle (for*/list ([number  card-numbers]
-                       [symbol  card-symbols]
-                       [shading card-shadings]
-                       [color   card-colors])
-             (card number symbol shading color))))
+(def (make-deck)
+  (shuffle
+   (for*/list ([number  card-numbers]
+               [symbol  card-symbols]
+               [shading card-shadings]
+               [color   card-colors])
+     (card number symbol shading color))))
 
-(define (all-equal? lst)
-  (define first-el (first lst))
+(def (all-equal? lst)
+  (def first-el (first lst))
   (for/and ([e lst])
     (equal? e first-el)))
 
-(define (all-distinct? lst)
+(def (all-distinct? lst)
   (= (length lst)
      (length (remove-duplicates lst))))
 
-(define (all-distinct-or-equal? lst)
+(def (all-distinct-or-equal? lst)
   (or (all-equal?    lst)
       (all-distinct? lst)))
 
-(define (makes-set? cards)
-  (and (= (length cards) 3)
-       (for/and ([param (list (map card-number  cards)
-                              (map card-symbol  cards)
-                              (map card-shading cards)
-                              (map card-color   cards))])
-         (all-distinct-or-equal? param))))
+(def (potential-set? cards)
+  (for/and ([param (list (map card-number  cards)
+                         (map card-symbol  cards)
+                         (map card-shading cards)
+                         (map card-color   cards))])
+    (all-distinct-or-equal? param)))
 
+(def (makes-set? cards)
+  (and (= (length cards) 3)
+       (potential-set? cards)))
