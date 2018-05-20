@@ -193,11 +193,11 @@
                          sep
                          sep)))
 
-; Returns top left (x. y) posn of the card table.
-(def (tl-card-table game-pict)
-  (def card-table (first (pict-children game-pict)))
-  (cons (child-dx card-table)
-        (child-dy card-table)))
+;; ; Returns top left (x. y) posn of the card table.
+;; (def (tl-card-table game-pict)
+;;   (def card-table (first (pict-children game-pict)))
+;;   (cons (child-dx card-table)
+;;         (child-dy card-table)))
 
 (def frame (new frame%
                 [label  "set!"]
@@ -239,7 +239,7 @@
 (def (draw-game canvas dc)
   (send dc set-smoothing 'aligned)
   (draw-pict (card-table frame-w
-                         (take (gs-deck game-state)
+                         (take (vector->list (gs-deck game-state))
                                (gs-visible-card-count game-state))
                          #:hover-idx (gs-hover-idx game-state)
                          #:selected-cards (gs-selected-cards game-state))
