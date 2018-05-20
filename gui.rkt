@@ -11,9 +11,9 @@
          "prelude.rkt"
          "logic.rkt")
 
-(def ([𝜙              (/ (+ 1 (sqrt 5)) 2)]
+(def ([ϕ              (/ (+ 1 (sqrt 5)) 2)] ;phi
       [frame-w        800]
-      [frame-h        (/ frame-w 𝜙)]
+      [frame-h        (/ frame-w ϕ)]
       [canvas-w       (* frame-w 0.75)]
       [pen-w          3]
       [bg-color       "blue"]
@@ -27,17 +27,19 @@
             selected-cards
             hover-idx
             canvas-w
-            canvas-h)
+            canvas-h
+            sets-found)
   #:mutable
   #:transparent)
 
-(def game-state (gs 'playing
-                    (make-deck)
-                    16
-                    empty
-                    0
-                    canvas-w
-                    (/ canvas-w 𝜙)))
+(def game-state (gs 'playing       ;status
+                    (make-deck)    ;deck
+                    16             ;visible-card-count
+                    empty          ;selected-cards
+                    0              ;hover-idx
+                    canvas-w       ;canvas-w
+                    (/ canvas-w ϕ) ;canvas-h
+                    0))            ;sets found
 
 (def (card-color->pict-color color)
   (case color
@@ -51,6 +53,12 @@
     ['striped 'horizontal-hatch]
     ['open    'transparent]))
 
+(def (card-symbol->pict-fn symbol)
+  (case symbol
+    ['diamond  diamond]
+    ['oval     oval]
+    ['squiggle squiggle]))
+
 (def (diamond-path w h)
   (def path (new dc-path%))
   (send path move-to (/ w 2) 0)
@@ -59,19 +67,6 @@
   (send path line-to 0       (/ h 2))
   (send path close)
   path)
-
-(def (diamond w h shading color)
-  (def ([pict-color   (card-color->pict-color color)]
-        [pict-shading (card-shading->pict-shading shading)]))
-  (dc (λ (dc dx dy)
-        (def ([old-brush (send dc get-brush)]
-              [old-pen   (send dc get-pen)]))
-        (send dc set-brush pict-color pict-shading)
-        (send dc set-pen pict-color pen-w 'solid)
-        (send dc draw-path (diamond-path w h) dx dy)
-        (send dc set-brush old-brush)
-        (send dc set-pen old-pen))
-      w h))
 
 (def (oval-path w h)
   (def ([path    (new dc-path%)]
@@ -90,19 +85,6 @@
         0         (- h curve-h))
   (send path close)
   path)
-
-(def (oval w h shading color)
-  (def ([pict-color   (card-color->pict-color color)]
-        [pict-shading (card-shading->pict-shading shading)]))
-  (dc (λ (dc dx dy)
-        (def old-brush (send dc get-brush))
-        (def old-pen (send dc get-pen))
-        (send dc set-brush pict-color pict-shading)
-        (send dc set-pen pict-color pen-w 'solid)
-        (send dc draw-path (oval-path w h) dx dy)
-        (send dc set-brush old-brush)
-        (send dc set-pen old-pen))
-      w h))
 
 (def (squiggle-path w h)
   (def ([path   (new dc-path%)]
@@ -128,27 +110,26 @@
   (send path close)
   path)
 
-(def (squiggle w h shading color)
-  (def ([pict-color   (card-color->pict-color color)]
-        [pict-shading (card-shading->pict-shading shading)]))
-  (dc (λ (dc dx dy)
-        (def ([old-brush (send dc get-brush)]
-              [old-pen   (send dc get-pen)]))
-        (send dc set-brush pict-color pict-shading)
-        (send dc set-pen pict-color pen-w 'solid)
-        (send dc draw-path (squiggle-path w h) dx dy)
-        (send dc set-brush old-brush)
-        (send dc set-pen old-pen))
-      w h))
+(define-syntax-rule (defpict id path)
+  (def (id w h shading color)
+    (def ([pict-color   (card-color->pict-color     color)]
+          [pict-shading (card-shading->pict-shading shading)]))
+    (dc (λ (dc dx dy)
+          (def ([old-brush (send dc get-brush)]
+                [old-pen   (send dc get-pen)]))
+          (send dc set-brush pict-color pict-shading)
+          (send dc set-pen pict-color pen-w 'solid)
+          (send dc draw-path (path w h) dx dy)
+          (send dc set-brush old-brush)
+          (send dc set-pen old-pen))
+        w h)))
 
-(def (card-symbol->pict-fn symbol)
-  (case symbol
-    ['diamond  diamond]
-    ['oval     oval]
-    ['squiggle squiggle]))
+(defpict diamond  diamond-path)
+(defpict oval     oval-path)
+(defpict squiggle squiggle-path)
 
 (def (symbol-row h number symbol shading color)
-  (def ([w       (* h 𝜙)]
+  (def ([w       (* h ϕ)]
         [pict-fn (card-symbol->pict-fn symbol)]
         [spacing (/ w 12)]
         [shape-w (/ w 3.5)]))
@@ -165,28 +146,27 @@
 (def (card-pict w card
                 #:selected? [selected? #f]
                 #:hover? [hover? #f])
-  (def ([h            (/ w 𝜙)]
+  (def ([h            (/ w ϕ)]
         [border-color (if hover? hover-color "black")]
         [border-w     (if hover? 4 1)]
         [color        (if selected? selected-color "white")]))
-  (launder
-   (cc-superimpose (filled-rectangle w h
-                                     #:color        color
-                                     #:border-color border-color
-                                     #:border-width border-w)
-                   (symbol-row (* h 0.75)
-                               (card-number  card)
-                               (card-symbol  card)
-                               (card-shading card)
-                               (card-color   card)))))
+  (cc-superimpose (filled-rectangle w h
+                                    #:color        color
+                                    #:border-color border-color
+                                    #:border-width border-w)
+                  (symbol-row (* h 0.75)
+                              (card-number  card)
+                              (card-symbol  card)
+                              (card-shading card)
+                              (card-color   card))))
 
 (def (table-w->card-w table-w)
-  (/ table-w 5))
+  (/ table-w 4))
 
 (def (card-table w cards [cols 4] [sep 10]
                  #:hover-idx      [hover-idx 0]
                  #:selected-cards [selected-cards '()])
-  (def ([h      (/ w 𝜙)]
+  (def ([h      (/ w ϕ)]
         [card-w (table-w->card-w w)]))
   (cc-superimpose (filled-rectangle w h
                                     #:color        bg-color
@@ -248,16 +228,14 @@
 (def (draw-game canvas dc)
   (send dc set-smoothing 'aligned)
   (send canvas set-canvas-background (make-object color% 0 0 255))
-  (def game-pict (card-table (gs-canvas-w game-state)
+  (def game-pict (card-table (/ (gs-canvas-w game-state) ϕ)
                              (take (vector->list (gs-deck game-state))
                                    (gs-visible-card-count game-state))
                              #:hover-idx (gs-hover-idx game-state)
                              #:selected-cards (gs-selected-cards game-state)))
   (draw-pict game-pict
              dc
-             0
-             #;(- (/ (gs-canvas-w game-state) 2)
-                (/ (pict-width game-pict) 2))
+             30
              (- (/ (gs-canvas-h game-state) 2)
                 (/ (pict-height game-pict) 2))))
 
