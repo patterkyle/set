@@ -4,6 +4,7 @@
                   brush%
                   color%
                   dc-path%
+                  make-font
                   pen%)
          pict
          pict/convert
@@ -11,14 +12,17 @@
          "prelude.rkt"
          "logic.rkt")
 
-(def ([ϕ              (/ (+ 1 (sqrt 5)) 2)] ;phi
+(def ([phi            (/ (+ 1 (sqrt 5)) 2)]
       [frame-w        800]
-      [frame-h        (/ frame-w ϕ)]
+      [frame-h        (/ frame-w phi)]
       [canvas-w       (* frame-w 0.75)]
       [pen-w          3]
       [bg-color       "blue"]
       [hover-color    "Fuchsia"]
-      [selected-color "yellow"]))
+      [selected-color "yellow"]
+      [game-font      (make-font #:size 16
+                                 #:face "monospace")]
+      [font-color     "white"]))
 
 ;game state
 (struct gs (status
@@ -32,14 +36,14 @@
   #:mutable
   #:transparent)
 
-(def game-state (gs 'playing       ;status
-                    (make-deck)    ;deck
-                    16             ;visible-card-count
-                    empty          ;selected-cards
-                    0              ;hover-idx
-                    canvas-w       ;canvas-w
-                    (/ canvas-w ϕ) ;canvas-h
-                    0))            ;sets found
+(def game-state (gs 'playing         ;status
+                    (make-deck)      ;deck
+                    16               ;visible-card-count
+                    empty            ;selected-cards
+                    0                ;hover-idx
+                    canvas-w         ;canvas-w
+                    (/ canvas-w phi) ;canvas-h
+                    0))              ;sets found
 
 (def (card-color->pict-color color)
   (case color
@@ -129,7 +133,7 @@
 (defpict squiggle squiggle-path)
 
 (def (symbol-row h number symbol shading color)
-  (def ([w       (* h ϕ)]
+  (def ([w       (* h phi)]
         [pict-fn (card-symbol->pict-fn symbol)]
         [spacing (/ w 12)]
         [shape-w (/ w 3.5)]))
@@ -146,7 +150,7 @@
 (def (card-pict w card
                 #:selected? [selected? #f]
                 #:hover? [hover? #f])
-  (def ([h            (/ w ϕ)]
+  (def ([h            (/ w phi)]
         [border-color (if hover? hover-color "black")]
         [border-w     (if hover? 4 1)]
         [color        (if selected? selected-color "white")]))
@@ -160,33 +164,21 @@
                               (card-shading card)
                               (card-color   card))))
 
-(def (table-w->card-w table-w)
-  (/ table-w 4))
-
 (def (card-table w cards [cols 4] [sep 10]
                  #:hover-idx      [hover-idx 0]
                  #:selected-cards [selected-cards '()])
-  (def ([h      (/ w ϕ)]
-        [card-w (table-w->card-w w)]))
-  (cc-superimpose (filled-rectangle w h
-                                    #:color        bg-color
-                                    #:draw-border? #f)
-                  (table cols
-                         (for/list ([i (in-range (length cards))]
-                                    [c cards])
-                           (card-pict card-w c
-                                      #:hover?    (= i hover-idx)
-                                      #:selected? (member i selected-cards)))
-                         cc-superimpose
-                         cc-superimpose
-                         sep
-                         sep)))
-
-;; ; Returns top left (x. y) posn of the card table.
-;; (def (tl-card-table game-pict)
-;;   (def card-table (first (pict-children game-pict)))
-;;   (cons (child-dx card-table)
-;;         (child-dy card-table)))
+  (def ([h      (/ w phi)]
+        [card-w (/ w 4)]))
+  (table cols
+         (for/list ([i (in-range (length cards))]
+                    [c cards])
+           (card-pict card-w c
+                      #:hover?    (= i hover-idx)
+                      #:selected? (member i selected-cards)))
+         cc-superimpose
+         cc-superimpose
+         sep
+         sep))
 
 (def frame (new frame%
                 [label  "set!"]
@@ -199,7 +191,8 @@
 (def (select-hover-idx!)
   (set-gs-selected-cards!
    game-state
-   (if (member (gs-hover-idx game-state) (gs-selected-cards game-state))
+   (if (member (gs-hover-idx game-state)
+               (gs-selected-cards game-state))
        (remove (gs-hover-idx game-state)
                (gs-selected-cards game-state))
        (cons   (gs-hover-idx game-state)
@@ -222,22 +215,35 @@
                     (gs-visible-card-count game-state))
              (set-gs-hover-idx! game-state
                                 (+ (gs-hover-idx game-state) 4)))]
-    ['#\return (select-hover-idx!)])
+    ['#\return (select-hover-idx!)]
+    #;['escape (exit)])
   (send canvas refresh))
 
 (def (draw-game canvas dc)
   (send dc set-smoothing 'aligned)
   (send canvas set-canvas-background (make-object color% 0 0 255))
-  (def game-pict (card-table (/ (gs-canvas-w game-state) ϕ)
+  (def game-pict (card-table (/ (gs-canvas-w game-state) phi)
                              (take (vector->list (gs-deck game-state))
                                    (gs-visible-card-count game-state))
                              #:hover-idx (gs-hover-idx game-state)
                              #:selected-cards (gs-selected-cards game-state)))
   (draw-pict game-pict
              dc
-             30
+             (- (/ (gs-canvas-w game-state) 2)
+                (/ (pict-width game-pict) 2))
              (- (/ (gs-canvas-h game-state) 2)
-                (/ (pict-height game-pict) 2))))
+                (+ 30 (/ (pict-height game-pict) 2))))
+  (def text-pict (colorize (text
+                            (string-append "Sets found: "
+                                           (number->string (gs-sets-found
+                                                            game-state)))
+                            game-font)
+                           font-color))
+  (draw-pict text-pict
+             dc
+             (- (* (gs-canvas-w game-state) 0.5)
+                (/ (pict-width text-pict) 2))
+             (* (gs-canvas-h game-state) 0.85)))
 
 (def game-canvas% (class canvas%
                     (define/override (on-event event)
