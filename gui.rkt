@@ -18,7 +18,7 @@
       [canvas-w       (* frame-w 0.75)]
       [pen-w          3]
       [bg-color       "blue"]
-      [hover-color    "Fuchsia"]
+      [hover-color    "fuchsia"]
       [selected-color "yellow"]
       [game-font      (make-font #:size 16
                                  #:face "monospace")]
@@ -32,18 +32,20 @@
             hover-idx
             canvas-w
             canvas-h
-            sets-found)
+            sets-found
+            used-cards)
   #:mutable
   #:transparent)
 
 (def game-state (gs 'playing         ;status
                     (make-deck)      ;deck
-                    16               ;visible-card-count
-                    empty            ;selected-cards
-                    0                ;hover-idx
-                    canvas-w         ;canvas-w
-                    (/ canvas-w phi) ;canvas-h
-                    0))              ;sets found
+                    16               ;visible cards
+                    empty            ;selected cards
+                    0                ;hover card index
+                    canvas-w         ;canvas width
+                    (/ canvas-w phi) ;canvas height
+                    0                ;sets found
+                    empty))          ;used cards
 
 (def (card-color->pict-color color)
   (case color
@@ -149,7 +151,7 @@
 
 (def (card-pict w card
                 #:selected? [selected? #f]
-                #:hover? [hover? #f])
+                #:hover?    [hover? #f])
   (def ([h            (/ w phi)]
         [border-color (if hover? hover-color "black")]
         [border-w     (if hover? 4 1)]
@@ -189,41 +191,73 @@
   (void))
 
 (def (select-hover-idx!)
+  (def ([hover-idx      (gs-hover-idx game-state)]
+        [selected-cards (gs-selected-cards game-state)]))
   (set-gs-selected-cards!
    game-state
-   (if (member (gs-hover-idx game-state)
-               (gs-selected-cards game-state))
-       (remove (gs-hover-idx game-state)
-               (gs-selected-cards game-state))
-       (cons   (gs-hover-idx game-state)
-               (gs-selected-cards game-state)))))
+   (if (member hover-idx selected-cards)
+       (remove hover-idx selected-cards)
+       (cons   hover-idx selected-cards))))
+
+(def (move-right!)
+  (when (< (add1 (gs-hover-idx game-state))
+           (gs-visible-card-count game-state))
+    (set-gs-hover-idx! game-state
+                       (add1 (gs-hover-idx game-state)))))
+
+(def (move-left!)
+  (when (>= (sub1 (gs-hover-idx game-state)) 0)
+    (set-gs-hover-idx! game-state
+                       (sub1 (gs-hover-idx game-state)))))
+
+(def (move-up!)
+  (when (>= (- (gs-hover-idx game-state) 4) 0)
+    (set-gs-hover-idx! game-state
+                       (- (gs-hover-idx game-state) 4))))
+
+(def (move-down!)
+  (when (< (+ (gs-hover-idx game-state) 4)
+           (gs-visible-card-count game-state))
+    (set-gs-hover-idx! game-state
+                       (+ (gs-hover-idx game-state) 4))))
+
+(def (get-selected-cards deck idx-lst)
+  (for/list ([i idx-lst])
+    (list-ref deck i)))
+
+(def (set-found!)
+  (def selected-cards (get-selected-cards (gs-deck game-state)
+                                          (gs-selected-cards game-state)))
+  (def new-deck (filter (λ (c)
+                          (not (member c selected-cards)))
+                        (gs-deck game-state)))
+  (set-gs-sets-found! game-state
+                      (add1 (gs-sets-found game-state)))
+  (set-gs-deck! game-state new-deck)
+  (set-gs-selected-cards! game-state empty))
+
+(def (handle-enter-key!)
+  (select-hover-idx!)
+  (when (makes-set? (get-selected-cards (gs-deck game-state)
+                                        (gs-selected-cards game-state)))
+    (set-found!)))
 
 (def (handle-key-event canvas event)
   (case (send event get-key-code)
-    ['right (when (< (add1 (gs-hover-idx game-state))
-                     (gs-visible-card-count game-state))
-              (set-gs-hover-idx! game-state
-                                 (add1 (gs-hover-idx game-state))))]
-    ['left (when (>= (sub1 (gs-hover-idx game-state)) 0)
-             (set-gs-hover-idx! game-state
-                                (sub1 (gs-hover-idx game-state))))]
-    ['up (when (>= (- (gs-hover-idx game-state) 4)
-                   0)
-           (set-gs-hover-idx! game-state
-                              (- (gs-hover-idx game-state) 4)))]
-    ['down (when (< (+ (gs-hover-idx game-state) 4)
-                    (gs-visible-card-count game-state))
-             (set-gs-hover-idx! game-state
-                                (+ (gs-hover-idx game-state) 4)))]
-    ['#\return (select-hover-idx!)]
-    #;['escape (exit)])
+    ['right    (move-right!)]
+    ['left     (move-left!)]
+    ['up       (move-up!)]
+    ['down     (move-down!)]
+    ['#\return (handle-enter-key!)]
+    ['#\q      (send frame show #f)] ;dev only
+    #;['escape (exit)]) ;prod only
   (send canvas refresh))
 
 (def (draw-game canvas dc)
   (send dc set-smoothing 'aligned)
   (send canvas set-canvas-background (make-object color% 0 0 255))
   (def game-pict (card-table (/ (gs-canvas-w game-state) phi)
-                             (take (vector->list (gs-deck game-state))
+                             (take (gs-deck game-state)
                                    (gs-visible-card-count game-state))
                              #:hover-idx (gs-hover-idx game-state)
                              #:selected-cards (gs-selected-cards game-state)))
@@ -259,7 +293,7 @@
                  [parent         frame]
                  [paint-callback draw-game]))
 
-(define (main)
+(def (main)
   (send frame show #t))
 
 (main)
