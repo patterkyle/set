@@ -9,10 +9,10 @@
           potential-set?
           makes-set?)
 
-(def ([card-numbers  #(one two three)]
-      [card-symbols  #(diamond squiggle oval)]
-      [card-shadings #(solid striped open)]
-      [card-colors   #(red green purple)]))
+(def ([card-numbers  '(one two three)]
+      [card-symbols  '(diamond squiggle oval)]
+      [card-shadings '(solid striped open)]
+      [card-colors   '(red green purple)]))
 
 (struct card (number
               symbol

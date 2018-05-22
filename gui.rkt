@@ -4,6 +4,7 @@
                   brush%
                   color%
                   dc-path%
+                  make-color
                   make-font
                   pen%)
          pict
@@ -12,42 +13,41 @@
          "prelude.rkt"
          "logic.rkt")
 
-(def ([phi            (/ (+ 1 (sqrt 5)) 2)]
+(def ([phi            (/ (+ 1 (sqrt 5)) 2)] ;φ, the golden ratio
       [frame-w        800]
       [frame-h        (/ frame-w phi)]
       [canvas-w       (* frame-w 0.75)]
       [pen-w          3]
-      [bg-color       "blue"]
+      [hover-border-w 4]
+      [bg-color       (make-color 0 0 255)]
       [hover-color    "fuchsia"]
       [selected-color "yellow"]
-      [game-font      (make-font #:size 16
+      [font-color     "white"]
+      [game-font      (make-font #:size 14
                                  #:face "monospace")]
-      [font-color     "white"]))
+      [min-cards      4]
+      [max-cards      20]))
 
 ;game state
-(struct gs (status
+(struct gs (status ;one of '(playing)
             deck
-            visible-card-count
-            selected-cards
-            hover-idx
+            vis-card-count ;number of cards to show on screen
+            selected-cards ;indexes of cards the user has selected
+            hover-idx ;currently highlighted card
             canvas-w
             canvas-h
-            sets-found
-            used-cards
-            cols)
+            sets-found)
   #:mutable
   #:transparent)
 
-(def game-state (gs 'playing         ;status
-                    (make-deck)      ;deck
-                    16               ;visible cards
-                    empty            ;selected cards
-                    0                ;hover card index
-                    canvas-w         ;canvas width
-                    (/ canvas-w phi) ;canvas height
-                    0                ;sets found
-                    empty            ;used cards
-                    4))              ;columns
+(def state (gs 'playing         ;status
+               (make-deck)      ;deck
+               16               ;visible cards
+               empty            ;selected cards
+               0                ;hover card index
+               canvas-w         ;canvas width
+               (/ canvas-w phi) ;canvas height
+               0))              ;sets found
 
 (def (card-color->pict-color color)
   (case color
@@ -118,7 +118,9 @@
   (send path close)
   path)
 
-(define-syntax-rule (def-path-pict id path)
+; Defines a function named `id` that draws the given path.
+; The returned function takes arguments (w h shading color) and returns a pict.
+(define-syntax-rule (def-pict-from-path id path)
   (def (id w h shading color)
     (def ([pict-color   (card-color->pict-color     color)]
           [pict-shading (card-shading->pict-shading shading)]))
@@ -132,9 +134,9 @@
           (send dc set-pen old-pen))
         w h)))
 
-(def-path-pict diamond  diamond-path)
-(def-path-pict oval     oval-path)
-(def-path-pict squiggle squiggle-path)
+(def-pict-from-path diamond  diamond-path)
+(def-pict-from-path oval     oval-path)
+(def-pict-from-path squiggle squiggle-path)
 
 (def (symbol-row h number symbol shading color)
   (def ([w       (* h phi)]
@@ -156,7 +158,7 @@
                 #:hover?    [hover? #f])
   (def ([h            (/ w phi)]
         [border-color (if hover? hover-color "black")]
-        [border-w     (if hover? 4 1)]
+        [border-w     (if hover? hover-border-w 1)]
         [color        (if selected? selected-color "white")]))
   (cc-superimpose (filled-rectangle w h
                                     #:color        color
@@ -189,122 +191,116 @@
                 [width  frame-w]
                 [height (inexact->exact (floor frame-h))]))
 
-(def (handle-mouse-event event)
-  (void))
-
 (def (select-hover-idx!)
-  (def ([hover-idx      (gs-hover-idx game-state)]
-        [selected-cards (gs-selected-cards game-state)]))
-  (set-gs-selected-cards! game-state
+  (def ([hover-idx (gs-hover-idx state)]
+        [selected-cards (gs-selected-cards state)]))
+  (set-gs-selected-cards! state
                           (if (member hover-idx selected-cards)
                               (remove hover-idx selected-cards)
                               (cons   hover-idx selected-cards))))
 
-(def (move-right!)
-  (when (< (add1 (gs-hover-idx game-state))
-           (gs-visible-card-count game-state))
-    (set-gs-hover-idx! game-state
-                       (add1 (gs-hover-idx game-state)))))
+(def (hover-move-right!)
+  (when (< (add1 (gs-hover-idx state))
+           (gs-vis-card-count state))
+    (set-gs-hover-idx! state
+                       (add1 (gs-hover-idx state)))))
 
-(def (move-left!)
-  (when (>= (sub1 (gs-hover-idx game-state)) 0)
-    (set-gs-hover-idx! game-state
-                       (sub1 (gs-hover-idx game-state)))))
+(def (hover-move-left!)
+  (when (>= (sub1 (gs-hover-idx state)) 0)
+    (set-gs-hover-idx! state
+                       (sub1 (gs-hover-idx state)))))
 
-(def (move-up!)
-  (when (>= (- (gs-hover-idx game-state) 4) 0)
-    (set-gs-hover-idx! game-state
-                       (- (gs-hover-idx game-state) 4))))
+(def (hover-mode-up!)
+  (when (>= (- (gs-hover-idx state) 4) 0)
+    (set-gs-hover-idx! state
+                       (- (gs-hover-idx state) 4))))
 
-(def (move-down!)
-  (when (< (+ (gs-hover-idx game-state) 4)
-           (gs-visible-card-count game-state))
-    (set-gs-hover-idx! game-state
-                       (+ (gs-hover-idx game-state) 4))))
+(def (hover-move-down!)
+  (when (< (+ (gs-hover-idx state) 4)
+           (gs-vis-card-count state))
+    (set-gs-hover-idx! state
+                       (+ (gs-hover-idx state) 4))))
 
 (def (get-selected-cards deck idx-lst)
   (for/list ([i idx-lst])
     (list-ref deck i)))
 
 (def (set-found!)
-  (def selected-cards (get-selected-cards (gs-deck game-state)
-                                          (gs-selected-cards game-state)))
+  (def selected-cards (get-selected-cards (gs-deck state)
+                                          (gs-selected-cards state)))
   (def new-deck (filter (λ (c)
                           (not (member c selected-cards)))
-                        (gs-deck game-state)))
-  (set-gs-sets-found! game-state
-                      (add1 (gs-sets-found game-state)))
-  (set-gs-deck! game-state new-deck)
-  (set-gs-selected-cards! game-state empty))
+                        (gs-deck state)))
+  (set-gs-sets-found! state
+                      (add1 (gs-sets-found state)))
+  (set-gs-deck! state new-deck)
+  (set-gs-selected-cards! state empty))
 
 (def (handle-enter-key!)
   (select-hover-idx!)
-  (when (makes-set? (get-selected-cards (gs-deck game-state)
-                                        (gs-selected-cards game-state)))
+  (when (makes-set? (get-selected-cards (gs-deck state)
+                                        (gs-selected-cards state)))
     (set-found!)))
 
 (def (add-row!)
-  (when (<= (+ (gs-visible-card-count game-state) 4)
-            20)
-    (set-gs-visible-card-count! game-state
-                                (+ (gs-visible-card-count game-state) 4))))
+  (when (<= (+ (gs-vis-card-count state) 4) max-cards)
+    (set-gs-vis-card-count! state
+                            (+ (gs-vis-card-count state) 4))))
 
 (def (remove-row!)
-  (when (>= (- (gs-visible-card-count game-state) 4)
-            4)
-    (set-gs-visible-card-count! game-state
-                                (- (gs-visible-card-count game-state) 4))))
+  (when (>= (- (gs-vis-card-count state) 4) min-cards)
+    (set-gs-vis-card-count! state
+                            (- (gs-vis-card-count state) 4))))
 
 (def (handle-key-event canvas event)
   (case (send event get-key-code)
-    ['right    (move-right!)]
-    ['left     (move-left!)]
-    ['up       (move-up!)]
-    ['down     (move-down!)]
+    ['right    (hover-move-right!)]
+    ['left     (hover-move-left!)]
+    ['up       (hover-mode-up!)]
+    ['down     (hover-move-down!)]
     ['#\return (handle-enter-key!)]
-    ['#\+      (add-row!)]
+    ['#\=      (add-row!)]
     ['#\-      (remove-row!)]
     ['#\q      (send frame show #f)] ;dev only
-    #;['escape (exit)]) ;prod only
+    #;['escape (exit)])              ;prod only
   (send canvas refresh))
 
 (def (draw-game canvas dc)
   (send dc set-smoothing 'aligned)
-  (send canvas set-canvas-background (make-object color% 0 0 255))
+  (send canvas set-canvas-background bg-color)
 
-  (def game-pict (card-table (/ (gs-canvas-w game-state) phi)
-                             (take (gs-deck game-state)
-                                   (gs-visible-card-count game-state))
-                             (gs-cols game-state)
-                             #:hover-idx (gs-hover-idx game-state)
-                             #:selected-cards (gs-selected-cards game-state)))
-  (draw-pict game-pict
-             dc
-             (- (/ (gs-canvas-w game-state) 2)
-                (/ (pict-width game-pict) 2))
-             (- (/ (gs-canvas-h game-state) 2)
-                (+ 30 (/ (pict-height game-pict) 2))))
-
-  (def text-pict (colorize (text
-                            (string-append "Sets found: "
-                                           (number->string (gs-sets-found
-                                                            game-state)))
-                            game-font)
-                           font-color))
-  (draw-pict text-pict
-             dc
-             (- (* (gs-canvas-w game-state) 0.5)
-                (/ (pict-width text-pict) 2))
-             (* (gs-canvas-h game-state) 0.9)))
+  (case (gs-status state)
+    ['playing
+     (def game-pict
+       (card-table (/ (gs-canvas-w state) phi)
+                   (take (gs-deck state)
+                         (gs-vis-card-count state))
+                   #:hover-idx (gs-hover-idx state)
+                   #:selected-cards (gs-selected-cards state)))
+     (draw-pict game-pict
+                dc
+                (- (/ (gs-canvas-w state) 2)
+                   (/ (pict-width game-pict) 2))
+                (- (/ (gs-canvas-h state) 2)
+                   (+ 30 (/ (pict-height game-pict) 2))))
+     (def text-pict (colorize (text
+                               (string-append "Sets found: "
+                                              (number->string (gs-sets-found
+                                                               state)))
+                               game-font)
+                              font-color))
+     (draw-pict text-pict
+                dc
+                (- (* (gs-canvas-w state) 0.5)
+                   (/ (pict-width text-pict) 2))
+                (* (gs-canvas-h state) 0.9))]))
 
 (def game-canvas% (class canvas%
-                    (define/override (on-event event)
-                      (handle-mouse-event event))
                     (define/override (on-char event)
                       (handle-key-event this event))
                     (define/override (on-size w h)
-                      (set-gs-canvas-w! game-state w)
-                      (set-gs-canvas-h! game-state h))
+                      (set-gs-canvas-w! state w)
+                      (set-gs-canvas-h! state h))
                     (super-new)))
 
 (def canvas (new game-canvas%

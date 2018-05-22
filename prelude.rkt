@@ -11,3 +11,11 @@
     [(_ (id args ...) body0 body1 ...) (define (id args ...)
                                          body0
                                          body1 ...)]))
+
+; A version of take that doesn't throw an error when n is larger than the list.
+(def (take* lst n)
+  (cond [(zero? n)    empty]
+        [(empty? lst) empty]
+        [else         (cons (car lst)
+                            (take* (cdr lst)
+                                   (sub1 n)))]))
